@@ -52,7 +52,7 @@ def save_data():
     except Exception as e:
         print(f"❌ Error saving data: {e}")
 
-# --- UPDATE SCHEDULE MESSAGE ---
+# --- UPDATE SCHEDULE MESSAGE (Fixed to prevent double ping) ---
 async def update_schedule():
     try:
         channel = bot.get_channel(SCHEDULE_CHANNEL_ID)
@@ -71,12 +71,18 @@ async def update_schedule():
         else:
             schedule_message = f"{role_ping}\n**Upcoming Training Sessions**\nNo sessions scheduled."
 
-        async for message in channel.history(limit=100):
-            if message.author == bot.user and message.content.startswith(f"<@&{PING_ROLE_ID}>"):
+        # Find the most recent schedule message from the bot
+        async for message in channel.history(limit=25):
+            if (
+                message.author == bot.user
+                and "**Upcoming Training Sessions**" in message.content
+            ):
                 await message.edit(content=schedule_message)
-                return
+                return  # Stop here to prevent sending a second ping
 
+        # If no existing message was found, send a new one
         await channel.send(schedule_message)
+
     except Exception as e:
         print(f"❌ Error updating schedule: {e}")
         traceback.print_exc()
@@ -105,16 +111,13 @@ async def before_check_training_times():
 @bot.event
 async def on_ready():
     print(f"✅ Logged in as {bot.user}")
-
     try:
         guild = discord.Object(id=GUILD_ID)
         bot.tree.copy_global_to(guild=guild)
-        synced = await bot.tree.sync(guild=guild)
-        print(f"🌐 Synced {len(synced)} slash commands to guild {GUILD_ID}")
+        await bot.tree.sync(guild=guild)
+        print(f"🌐 Synced slash commands to guild {GUILD_ID}")
     except Exception as e:
         print(f"❌ Error syncing commands: {e}")
-        traceback.print_exc()
-
     if not check_training_times.is_running():
         check_training_times.start()
 
