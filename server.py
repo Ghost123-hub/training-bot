@@ -52,11 +52,11 @@ def save_data():
     except Exception as e:
         print(f"❌ Error saving data: {e}")
 
-# --- UPDATE SCHEDULE MESSAGE (Fixed to prevent double ping) ---
+# --- UPDATE SCHEDULE MESSAGE ---
 async def update_schedule():
     try:
-        channel = bot.get_channel(SCHEDULE_CHANNEL_ID)
-        if channel is None:
+        schedule_channel = bot.get_channel(SCHEDULE_CHANNEL_ID)
+        if schedule_channel is None:
             print("⚠️ Schedule channel not found.")
             return
 
@@ -66,22 +66,23 @@ async def update_schedule():
             for slot in data["claimed_slots"]
             if slot.get("status") == "claimed"
         ]
+
         if schedule_lines:
             schedule_message = f"{role_ping}\n**Upcoming Training Sessions**\n" + "\n".join(schedule_lines)
         else:
             schedule_message = f"{role_ping}\n**Upcoming Training Sessions**\nNo sessions scheduled."
 
-        # Find the most recent schedule message from the bot
-        async for message in channel.history(limit=25):
+        # Find and edit existing message to avoid multiple pings
+        async for message in schedule_channel.history(limit=25):
             if (
                 message.author == bot.user
                 and "**Upcoming Training Sessions**" in message.content
             ):
                 await message.edit(content=schedule_message)
-                return  # Stop here to prevent sending a second ping
+                return
 
-        # If no existing message was found, send a new one
-        await channel.send(schedule_message)
+        # If no existing message found, send new one
+        await schedule_channel.send(schedule_message)
 
     except Exception as e:
         print(f"❌ Error updating schedule: {e}")
@@ -94,9 +95,9 @@ async def check_training_times():
         now = datetime.datetime.now().strftime("%Y-%m-%d %I:%M %p")
         for slot in data["claimed_slots"]:
             if slot.get("time") == now and slot.get("status") == "claimed":
-                channel = bot.get_channel(SCHEDULE_CHANNEL_ID)
-                if channel:
-                    await channel.send(f"<@&{PING_ROLE_ID}> {slot['mention']} has hosted a training @ {now}!")
+                schedule_channel = bot.get_channel(SCHEDULE_CHANNEL_ID)
+                if schedule_channel:
+                    await schedule_channel.send(f"<@&{PING_ROLE_ID}> {slot['mention']} has hosted a training @ {now}!")
                     slot["status"] = "completed"
                     save_data()
                     await update_schedule()
@@ -130,6 +131,8 @@ async def claim(interaction: discord.Interaction, slot_id: int = None):
         if not has_role:
             await interaction.response.send_message("❌ You need the Store Director role.", ephemeral=True)
             return
+
+        # View slots
         if slot_id is None:
             available = [s for s in data["available_slots"] if s["status"] == "available"]
             if not available:
@@ -138,19 +141,38 @@ async def claim(interaction: discord.Interaction, slot_id: int = None):
             msg = "**Available Slots:**\n" + "\n".join(f"ID {s['id']} - {s['time']}" for s in available)
             await interaction.response.send_message(msg, ephemeral=True)
             return
+
+        # Claim slot
         slot = next((s for s in data["available_slots"] if s["id"] == slot_id and s["status"] == "available"), None)
         if not slot:
-            await interaction.response.send_message("❌ Invalid slot.", ephemeral=True)
+            await interaction.response.send_message("❌ Invalid slot or already claimed.", ephemeral=True)
             return
+
         slot["status"] = "claimed"
         data["claimed_slots"].append({
-            "id": slot["id"], "time": slot["time"],
-            "user": interaction.user.name, "mention": interaction.user.mention,
+            "id": slot["id"],
+            "time": slot["time"],
+            "user": interaction.user.name,
+            "mention": interaction.user.mention,
             "status": "claimed"
         })
         save_data()
+
+        # Send announcement in trainings channel
+        trainings_channel = bot.get_channel(TRAININGS_CHANNEL_ID)
+        if trainings_channel:
+            await trainings_channel.send(
+                f"<@&{PING_ROLE_ID}> {interaction.user.mention} has claimed a training session on **{slot['time']}**."
+            )
+
+        # Update schedule in schedule channel
         await update_schedule()
-        await interaction.response.send_message(f"✅ You claimed **{slot['time']}**.", ephemeral=True)
+
+        await interaction.response.send_message(
+            f"✅ You claimed the training session on **{slot['time']}**. "
+            f"It’s been announced in <#{TRAININGS_CHANNEL_ID}> and added to the schedule in <#{SCHEDULE_CHANNEL_ID}>.",
+            ephemeral=True
+        )
     except Exception as e:
         print(f"❌ Error in claim: {e}")
         traceback.print_exc()
@@ -175,6 +197,14 @@ async def unclaim(interaction: discord.Interaction):
 
         data["claimed_slots"].remove(user_slot)
         save_data()
+
+        # Send unclaim announcement in trainings channel
+        trainings_channel = bot.get_channel(TRAININGS_CHANNEL_ID)
+        if trainings_channel:
+            await trainings_channel.send(
+                f"🔓 {interaction.user.mention} has unclaimed their training session on **{user_slot['time']}**."
+            )
+
         await update_schedule()
         await interaction.response.send_message(f"✅ You unclaimed **{user_slot['time']}**.", ephemeral=True)
     except Exception as e:
