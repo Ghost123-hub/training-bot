@@ -72,16 +72,13 @@ async def update_schedule():
         else:
             schedule_message = f"{role_ping}\n**Upcoming Training Sessions**\nNo sessions scheduled."
 
-        # Find and edit existing message to avoid multiple pings
+        # Edit existing message to prevent double ping
         async for message in schedule_channel.history(limit=25):
-            if (
-                message.author == bot.user
-                and "**Upcoming Training Sessions**" in message.content
-            ):
+            if message.author == bot.user and "**Upcoming Training Sessions**" in message.content:
                 await message.edit(content=schedule_message)
                 return
 
-        # If no existing message found, send new one
+        # Send a new one if no message exists
         await schedule_channel.send(schedule_message)
 
     except Exception as e:
@@ -132,7 +129,7 @@ async def claim(interaction: discord.Interaction, slot_id: int = None):
             await interaction.response.send_message("❌ You need the Store Director role.", ephemeral=True)
             return
 
-        # View slots
+        # View available slots
         if slot_id is None:
             available = [s for s in data["available_slots"] if s["status"] == "available"]
             if not available:
@@ -158,21 +155,26 @@ async def claim(interaction: discord.Interaction, slot_id: int = None):
         })
         save_data()
 
-        # Send announcement in trainings channel
+        # Send announcement message
         trainings_channel = bot.get_channel(TRAININGS_CHANNEL_ID)
         if trainings_channel:
-            await trainings_channel.send(
+            msg = await trainings_channel.send(
                 f"<@&{PING_ROLE_ID}> {interaction.user.mention} has claimed a training session on **{slot['time']}**."
             )
+            # Auto-delete after 7200 seconds (2 hours)
+            await asyncio.sleep(7200)
+            try:
+                await msg.delete()
+            except discord.NotFound:
+                pass
 
-        # Update schedule in schedule channel
         await update_schedule()
-
         await interaction.response.send_message(
             f"✅ You claimed the training session on **{slot['time']}**. "
             f"It’s been announced in <#{TRAININGS_CHANNEL_ID}> and added to the schedule in <#{SCHEDULE_CHANNEL_ID}>.",
             ephemeral=True
         )
+
     except Exception as e:
         print(f"❌ Error in claim: {e}")
         traceback.print_exc()
@@ -186,7 +188,10 @@ async def unclaim(interaction: discord.Interaction):
             await interaction.response.send_message("❌ You need the Store Director role.", ephemeral=True)
             return
 
-        user_slot = next((s for s in data["claimed_slots"] if s["mention"] == interaction.user.mention and s["status"] == "claimed"), None)
+        user_slot = next(
+            (s for s in data["claimed_slots"] if s["mention"] == interaction.user.mention and s["status"] == "claimed"),
+            None
+        )
         if not user_slot:
             await interaction.response.send_message("❌ You don't have any claimed sessions.", ephemeral=True)
             return
@@ -198,15 +203,21 @@ async def unclaim(interaction: discord.Interaction):
         data["claimed_slots"].remove(user_slot)
         save_data()
 
-        # Send unclaim announcement in trainings channel
         trainings_channel = bot.get_channel(TRAININGS_CHANNEL_ID)
         if trainings_channel:
-            await trainings_channel.send(
+            msg = await trainings_channel.send(
                 f"🔓 {interaction.user.mention} has unclaimed their training session on **{user_slot['time']}**."
             )
+            # Auto-delete after 7200 seconds (2 hours)
+            await asyncio.sleep(7200)
+            try:
+                await msg.delete()
+            except discord.NotFound:
+                pass
 
         await update_schedule()
         await interaction.response.send_message(f"✅ You unclaimed **{user_slot['time']}**.", ephemeral=True)
+
     except Exception as e:
         print(f"❌ Error in unclaim: {e}")
         traceback.print_exc()
