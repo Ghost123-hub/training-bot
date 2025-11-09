@@ -105,13 +105,16 @@ async def before_check_training_times():
 @bot.event
 async def on_ready():
     print(f"✅ Logged in as {bot.user}")
+
     try:
         guild = discord.Object(id=GUILD_ID)
         bot.tree.copy_global_to(guild=guild)
-        await bot.tree.sync(guild=guild)
-        print(f"🌐 Synced slash commands to guild {GUILD_ID}")
+        synced = await bot.tree.sync(guild=guild)
+        print(f"🌐 Synced {len(synced)} slash commands to guild {GUILD_ID}")
     except Exception as e:
         print(f"❌ Error syncing commands: {e}")
+        traceback.print_exc()
+
     if not check_training_times.is_running():
         check_training_times.start()
 
@@ -147,6 +150,32 @@ async def claim(interaction: discord.Interaction, slot_id: int = None):
         await interaction.response.send_message(f"✅ You claimed **{slot['time']}**.", ephemeral=True)
     except Exception as e:
         print(f"❌ Error in claim: {e}")
+        traceback.print_exc()
+
+# --- /UNCLAIM COMMAND ---
+@bot.tree.command(name="unclaim", description="Unclaim your training session slot.")
+async def unclaim(interaction: discord.Interaction):
+    try:
+        has_role = any(r.name.lower() == "store director" for r in interaction.user.roles)
+        if not has_role:
+            await interaction.response.send_message("❌ You need the Store Director role.", ephemeral=True)
+            return
+
+        user_slot = next((s for s in data["claimed_slots"] if s["mention"] == interaction.user.mention and s["status"] == "claimed"), None)
+        if not user_slot:
+            await interaction.response.send_message("❌ You don't have any claimed sessions.", ephemeral=True)
+            return
+
+        for av_slot in data["available_slots"]:
+            if av_slot["id"] == user_slot["id"]:
+                av_slot["status"] = "available"
+
+        data["claimed_slots"].remove(user_slot)
+        save_data()
+        await update_schedule()
+        await interaction.response.send_message(f"✅ You unclaimed **{user_slot['time']}**.", ephemeral=True)
+    except Exception as e:
+        print(f"❌ Error in unclaim: {e}")
         traceback.print_exc()
 
 # --- AIOHTTP WEB SERVER ---
