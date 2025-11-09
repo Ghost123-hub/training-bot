@@ -1,1 +1,11 @@
-
+{
+  "available_slots": [
+    { "id": 1, "time": "2025-11-10 12:00 PM", "status": "available" },
+    { "id": 2, "time": "2025-11-10 2:00 PM", "status": "available" },
+    { "id": 3, "time": "2025-11-10 4:00 PM", "status": "available" },
+    { "id": 4, "time": "2025-11-10 6:00 PM", "status": "available" },
+    { "id": 5, "time": "2025-11-10 8:00 PM", "status": "available" },
+    { "id": 6, "time": "2025-11-10 10:00 PM", "status": "available" }
+  ],
+  "claimed_slots": []
+}
